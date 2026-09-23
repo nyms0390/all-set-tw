@@ -63,7 +63,7 @@ Cloudflare Builds 會在 build 階段自動檢查並建立排程同步所需的 
 
 首次使用時，依畫面透過 **Git account → New Github Connection → Install & Authorize** 授權 Cloudflare 存取 GitHub。
 
-先在 Cloudflare Zero Trust 建立只允許自己身分的 Access policy，啟用 MFA 並設定較短的 session；取得實際 Team Domain 與 Application Audience (aud)。部署表單中的 `TEAM_DOMAIN`、`POLICY_AUD` 均填入實際值，`DEMO_MODE` 設為 `false`，正式 Worker 不設定 `LOCAL_DEV_MODE`；不要使用暫時值或新增 `POLICY_AUDS` 佔位設定。
+先在 Cloudflare Zero Trust 建立 Access Allow policy，讓唯一的 Include 精確指定自己的 email／身分，不選 Everyone 或整個帳號；啟用 MFA 並設定較短的 session。取得實際 Team Domain 與 Application Audience (aud)。部署表單中的 `TEAM_DOMAIN`、`POLICY_AUD` 均填入實際值，`DEMO_MODE` 設為 `false`，正式 Worker 不設定 `LOCAL_DEV_MODE`；不要使用暫時值或新增 `POLICY_AUDS` 佔位設定。
 
 `CONFIG_ENCRYPTION_KEY` 是系統加密連接器設定時必須使用的金鑰，可用下列指令產生：
 
@@ -96,7 +96,7 @@ Access Application 會顯示以下資訊：
 
 1. 在登出狀態測試每個公開網址的 `/api/summary`，確認沒有金融資料回應且必須通過 Access；再登入確認能正常開啟。
 2. 確認開發與正式環境使用不同 D1。先維持各連接器排程停用，只設定一個連接器並執行一次手動同步。
-3. 將帳戶、餘額及交易與銀行原始紀錄核對；確認資料正確後，才在介面啟用所需的排程。匯出檔、D1 備份與 log 可能含敏感資料，應限制存取並妥善刪除。D1 Time Travel 保留期限依方案為 7 或 30 天，不能替代長期備份。
+3. 將帳戶、餘額及交易與銀行原始紀錄核對；確認資料正確後，才在介面啟用所需的排程。只有連接器設定使用 `CONFIG_ENCRYPTION_KEY` 作應用層加密；金融資料表沒有應用層加密。D1 匯出／備份與 log 均屬敏感資料，不得提交 Git，並應限制存取及妥善刪除。D1 Time Travel 保留期限依方案為 7 或 30 天，不能替代長期備份。
 
 ### 步驟四：限制登入身分與期限
 
@@ -105,9 +105,11 @@ Cloudflare Access 可能預設允許 Email OTP。僅允許自己控制的身分�
 #### 使用 Cloudflare 帳號登入
 
 1. 前往 **Zero Trust → Integrations → Identity providers**，確認已有 **Cloudflare**；若沒有，點選 **Add new identity provider → Cloudflare**
-2. 啟用 **Restrict to account members** 並儲存，避免非此 Cloudflare 帳號成員登入
+2. 啟用 **Restrict to account members** 並儲存；這仍可能允許其他帳號成員，還須設定下述精確的 Allow policy
 3. 前往 **Zero Trust → Access controls → Applications → taiwan-fin-hub → Authentication**，將登入方式設為 **Cloudflare**
 4. 若只使用此登入方式，可啟用 **Apply instant authentication**，略過登入方式選擇頁
+
+在此 Application 的 **Policies** 中，讓 Allow policy 的唯一 Include 精確指定自己的 email／身分，移除 Everyone 或整個帳號等較廣的 Allow policy。另依[Cloudflare MFA 指引](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/mfa-requirements/)在 organization 啟用 independent MFA，並核對 Application 及 Policy 沒有覆寫為 **Disable MFA**。
 
 新建立的 Zero Trust organization 通常已預設啟用 Cloudflare identity provider，不需要另外新增。
 

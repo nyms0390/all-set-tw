@@ -57,10 +57,10 @@ Deploy to Cloudflare 會建立部署用 repository、D1 並設定 Workers Builds
 
 Cloudflare Access 預設可能使用 Email OTP。限制為自己控制的身分並啟用 MFA：
 
-1. 前往 **Zero Trust → Integrations → Identity providers**。
-2. 新增或開啟 **Cloudflare** Identity Provider，啟用 **Restrict to account members**。
-3. 前往 **Access controls → Applications → taiwan-fin-hub → Authentication**，將登入方式設為 Cloudflare。
-4. 若只保留此登入方式，可啟用 **Apply instant authentication**。
+1. 前往 **Zero Trust → Integrations → Identity providers**，新增或開啟 **Cloudflare** Identity Provider，啟用 **Restrict to account members**。這項限制仍可能允許其他帳號成員。
+2. 前往 **Access controls → Applications → taiwan-fin-hub → Authentication**，將登入方式設為 Cloudflare；若只保留此方式，可啟用 **Apply instant authentication**。
+3. 在此 Application 的 **Policies** 中，建立或編輯 **Allow** policy，讓唯一的 **Include** 精確指定使用者本人的 email／身分；移除 **Everyone**、整個帳號或其他會允許更多人的 policy。以另一個帳號成員測試，確認無法登入。
+4. 依 [Cloudflare MFA 指引](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/mfa-requirements/)先在 organization 啟用 **independent MFA**，再於 Application 的 **Authentication → MFA** 選 **Custom MFA settings**、允許的驗證器與較短的 Authentication duration；核對 Policy 的 MFA 設定沒有覆寫為 **Disable MFA**。Policy 設定優先於 Application，Application 優先於 organization；實際登入一次確認會要求第二因子。
 
 ### 登入期限
 
@@ -74,7 +74,7 @@ Cloudflare Access 預設可能使用 Email OTP。限制為自己控制的身分�
 2. 核對部署 repository 與 Workers Builds 連接的 repository／production branch，再將已審查版本更新至該分支；推送可能立即觸發建置與部署。
 3. 部署後核對公開網址的 Access 保護、`/api/summary` 登出回應及資料顯示。若 Queue 建立失敗，檢查 Workers Builds API token 是否具有帳戶層級的 Queues Read 與 Queues Edit。
 
-匯出的金融資料與 D1 備份都應限制存取。正式與開發環境使用不同 D1；先維持連接器排程停用，只設定一個連接器並手動同步，將結果與銀行原始紀錄核對後才啟用所需排程。D1 Time Travel 的保留期限依方案為 7 或 30 天，不可當成長期備份。
+只有連接器設定使用 `CONFIG_ENCRYPTION_KEY` 作應用層加密，金融資料表沒有應用層加密。因此 D1 匯出／備份與 log 都屬敏感資料，不得提交 Git，須限制存取並妥善刪除。正式與開發環境使用不同 D1；先維持連接器排程停用，只設定一個連接器並手動同步，將結果與銀行原始紀錄核對後才啟用所需排程。D1 Time Travel 的保留期限依方案為 7 或 30 天，不可當成長期備份。
 
 ### 目前的瀏覽器相依警示
 
