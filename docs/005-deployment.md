@@ -1,6 +1,6 @@
 # 進階部署與更新
 
-本文件補充 README 的部署流程，說明 Cloudflare Access、Secrets、自動更新、本機開發與既有 D1 部署。Cloudflare Dashboard 的名稱與位置可能調整；若畫面不同，請以官方文件為準。
+本文件補充 README 的部署流程，說明 Cloudflare Access、Secrets、手動檢查更新、本機開發與既有 D1 部署。Cloudflare Dashboard 的名稱與位置可能調整；若畫面不同，請以官方文件為準。
 
 ## 部署前準備
 
@@ -18,13 +18,13 @@ Workers、D1、Queues、Workers AI 與 Browser Run 均有免費額度，但並�
 openssl rand -hex 32
 ```
 
-`CONFIG_ENCRYPTION_KEY` 用來加密 D1 中的連接器設定，一般私人部署仍然需要。使用一鍵部署時只需填入一次，Cloudflare 會保存並在後續部署中沿用；沒有另外記下不會影響現有 Worker。若日後要重建 Worker、搬移環境或沿用既有 D1，則必須使用相同金鑰，否則需要重新設定所有連接器。建議需要災難復原能力的使用者將它保存在密碼管理器，並且不要在既有部署中任意更換或刪除。
+`CONFIG_ENCRYPTION_KEY` 用來加密 D1 中的連接器設定，一般私人部署仍然需要。使用一鍵部署時只需填入一次，Cloudflare 會保存並在後續部署中沿用；另存一份於密碼管理器。若日後要重建 Worker、搬移環境或沿用既有 D1，必須使用相同金鑰，否則需要重新設定所有連接器。不要將金鑰放進 repository、資料庫匯出檔或 log，也不要在既有部署中任意更換或刪除。
 
 ### 2. 執行 Deploy to Cloudflare
 
-從 README 點擊 **Deploy to Cloudflare**，授權 Cloudflare 存取 GitHub。部署頁目前不允許欄位留空，因此 `TEAM_DOMAIN` 可先保留 `https://placeholder.invalid`，`POLICY_AUD` 與 `POLICY_AUDS` 可先保留 `temporary-placeholder`；這些只是非敏感的暫時值。接著填入 `CONFIG_ENCRYPTION_KEY` 並完成部署。啟用 Cloudflare Access 後，務必換成真正的 Team Domain 與 Audience；只有單一 Access Application 時，請刪除暫時的 `POLICY_AUDS`。在完成替換前登入驗證不會成功。
+先建立公開 fork 並檢查要部署的 commit。將 README 的 Deploy URL 換成自己的 fork URL；Cloudflare 會從 fork 再建立第二個部署用 repository。若不想公開 fork，可用 GitHub **Import repository** 建立私人獨立副本，再在 Cloudflare 連接該 repository、設定 D1 與 bindings。兩種方式都要核對部署 repository、Workers Builds 連接的 repository 與 production branch。
 
-<img src="../images/deploy-setup.png" alt="Cloudflare 部署設定" width="450">
+先在 Cloudflare Zero Trust 建立只允許自己身分的 Access Application 與 policy，啟用 MFA，取得真實 Team Domain 與 Audience (aud)。部署表單填入實際 `TEAM_DOMAIN`、`POLICY_AUD` 和 `CONFIG_ENCRYPTION_KEY`，設定 `DEMO_MODE=false`，正式 Worker 不設定 `LOCAL_DEV_MODE`。不要使用暫時的 Audience 或 `POLICY_AUDS` 佔位值。
 
 Deploy to Cloudflare 會建立部署用 repository、D1 並設定 Workers Builds。本專案的 build 與 deploy script 也會檢查排程同步所需的 `taiwan-fin-hub-sync` Queue，缺少時自動建立；部署 script 會保留既有 VAPID 金鑰，初次部署則自動產生。
 
@@ -36,7 +36,7 @@ Deploy to Cloudflare 會建立部署用 repository、D1 並設定 Workers Builds
 
 1. 前往 **Workers & Pages** 並選擇部署完成的 Worker。
 2. 開啟 **Settings → Domains & Routes**。
-3. 在 `workers.dev` 網址旁啟用 Cloudflare Access。
+3. 在 `workers.dev`、自訂網域及其他可到達此 Worker 的公開網址啟用 Cloudflare Access；無法保護的網址先停用。
 
 部分 Dashboard 版本會顯示 **Domains** 頁籤及 **Public／Restricted** 選項，將網址設為 **Restricted** 即可。最新操作方式請參考 [Cloudflare Access for Workers](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/)。
 
@@ -51,70 +51,34 @@ Deploy to Cloudflare 會建立部署用 repository、D1 並設定 Workers Builds
 
 <img src="../images/deploy-secrets.png" alt="設定 Cloudflare Access Secrets" width="700">
 
-若同一 Worker 需要接受多個 Access Application，可設定 `POLICY_AUDS`，使用逗號或空白分隔多個 Audience。一般單一部署只需 `POLICY_AUD`，應刪除部署時暫填的 `POLICY_AUDS`。
+若確實要接受多個 Access Application，才設定 `POLICY_AUDS` 為經核對的實際 Audience 清單，以逗號或空白分隔。一般單一部署只需 `POLICY_AUD`。在輸入銀行憑證前，確認 `DEMO_MODE=false`、`LOCAL_DEV_MODE` 未設定，並在登出狀態測試每個公開網址的 `/api/summary`：應由 Access 擋下，不應回傳金融資料；登入後再確認應用程式可用。
 
 ### 使用 Cloudflare 帳號登入
 
-Cloudflare Access 預設可能使用 Email OTP。如要限定 Cloudflare 帳號成員：
+Cloudflare Access 預設可能使用 Email OTP。限制為自己控制的身分並啟用 MFA：
 
 1. 前往 **Zero Trust → Integrations → Identity providers**。
 2. 新增或開啟 **Cloudflare** Identity Provider，啟用 **Restrict to account members**。
 3. 前往 **Access controls → Applications → taiwan-fin-hub → Authentication**，將登入方式設為 Cloudflare。
 4. 若只保留此登入方式，可啟用 **Apply instant authentication**。
 
-### 延長登入期限
+### 登入期限
 
-登入期限會採用相關設定中最短的值。若要延長至一個月，請確認：
+在 Access Application、Policy 與 **Access controls → Access settings** 的全域設定中選擇較短的 Session Duration；實際期限會採最短的值。避免將金融資料的登入狀態延長至一個月。
 
-1. Access Application 的 **Session Duration** 為 **1 month**。
-2. **Access controls → Access settings** 的 **Global session duration** 為 **1 month**。
-3. Access Policy 若另有 Session Duration，也設為一個月。
+## 手動檢查更新
 
-## 自動更新
+部署用 repository 不應安裝自動同步上游的 workflow，也不要讓未審查的上游 commit 直接進入 production branch。每次更新時：
 
-Deploy to Cloudflare 建立的新 repository 不會包含本專案的 `.github/workflows`，需要一次性安裝更新 workflow。
+1. 查看上游 diff、安全公告及相依版本，選定要採用的 commit，並在 fork 或私人獨立副本合併、解決衝突及執行驗證。
+2. 核對部署 repository 與 Workers Builds 連接的 repository／production branch，再將已審查版本更新至該分支；推送可能立即觸發建置與部署。
+3. 部署後核對公開網址的 Access 保護、`/api/summary` 登出回應及資料顯示。若 Queue 建立失敗，檢查 Workers Builds API token 是否具有帳戶層級的 Queues Read 與 Queues Edit。
 
-### 從 GitHub 網頁安裝
+匯出的金融資料與 D1 備份都應限制存取。正式與開發環境使用不同 D1；先維持連接器排程停用，只設定一個連接器並手動同步，將結果與銀行原始紀錄核對後才啟用所需排程。D1 Time Travel 的保留期限依方案為 7 或 30 天，不可當成長期備份。
 
-1. 在部署 repository 開啟 [`deploy/github/sync-upstream.yml`](../deploy/github/sync-upstream.yml)，點擊 **Raw** 並複製內容。
-2. 回到 repository 首頁，選擇 **Add file → Create new file**。
-3. 建立 `.github/workflows/sync-upstream.yml`，貼上內容並 commit 至 `main`。
-4. 前往 **Settings → Actions → General → Workflow permissions**，允許 GitHub Actions 寫入 repository。
+### 目前的瀏覽器相依警示
 
-### 從本機安裝
-
-```bash
-mkdir -p .github/workflows
-cp deploy/github/sync-upstream.yml .github/workflows/sync-upstream.yml
-git add .github/workflows/sync-upstream.yml
-git commit -m "啟用版本自動更新"
-git push
-```
-
-完成後可從 **Actions → Sync Latest Version → Run workflow** 手動更新，也會在每天台灣時間 **04:15** 自動執行。
-
-### 更新如何運作
-
-workflow 會：
-
-1. 取得 `TedLin1993/all-set-tw` 的最新 `main`。
-2. 以前次同步版本為基準進行三方合併。
-3. 保留部署 repository 自己的 `.github/workflows`。
-4. 有新版本時推送至 `main`，由 Workers Builds 重新部署。
-
-首次同步若沒有共同 Git history，更新器只會在部署內容可對應到上游版本、且 workflows 以外沒有自行修改時接軌。同步前會建立 `backup-before-first-upstream-sync` branch；同名 branch 已存在時不會覆寫。
-
-後續同步會在 commit message 記錄上游基準，不使用 force push。若本地修改與上游衝突，更新器會在推送前停止，保留目前內容供手動處理。
-
-### 更新故障排查
-
-- **Workflow 沒有執行**：確認檔案位於 `.github/workflows/sync-upstream.yml`，並檢查 Actions 是否啟用。
-- **無法推送更新**：確認 Workflow permissions 允許寫入 repository。
-- **合併衝突**：從該次 Actions log 查看衝突檔案，手動合併後再重新執行。
-- **`fatal: refusing to merge unrelated histories`**：部署 repository 仍在使用舊版 workflow，請重新複製最新的 [`deploy/github/sync-upstream.yml`](../deploy/github/sync-upstream.yml)。
-- **Queue 權限錯誤**：替 Workers Builds API token 增加帳戶層級的 Queues Read 與 Queues Edit。
-
-更新流程會保留部署 repository 目前安裝的 workflow，因此上游若修正更新流程，仍需手動替換 workflow 檔案。
+`npm audit --omit=dev` 仍會列出 `@cloudflare/puppeteer@1.1.0` → `@puppeteer/browsers@2.2.4` → `extract-zip@2.0.1` 的 [symlink 路徑穿越](https://github.com/advisories/GHSA-jmr9-qjv8-65gv)與[任意檔案寫入](https://github.com/advisories/GHSA-7pqw-9j4j-h8q3)警示；`extract-zip` 目前沒有修補版。這些問題需要解壓攻擊者控制的 ZIP。專案的銀行連接器使用 Cloudflare Browser Rendering binding，沒有接受 ZIP 上傳或呼叫瀏覽器下載／解壓 API；因此尚未發現可由使用者資料觸發的路徑，但仍須追蹤上游套件修補，不應以強制降版 Puppeteer 當成已修復。相同相依鏈的 `ip-address` 已在 lockfile 更新至 10.7.2。`yauzl` 鎖定 2.10.0；[影響 3.2.0 的公告](https://github.com/advisories/GHSA-gmq8-994r-jv83)不適用。
 
 ## 本機開發
 

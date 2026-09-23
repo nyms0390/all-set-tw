@@ -51,17 +51,19 @@
 
 ### 步驟一：一鍵部署
 
-點擊下方按鈕。Cloudflare 會在你的 GitHub 帳號建立新的 repository、自動建立 D1 Database，並部署至 Cloudflare Workers：
+先檢查這份[公開 fork](https://github.com/nyms0390/all-set-tw) 的程式碼及相依版本，並選定要部署的 commit。確認修補版本已在該 fork 後，再使用指向此 fork 的按鈕：
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/TedLin1993/all-set-tw)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nyms0390/all-set-tw)
+
+若從自己的 fork 部署，請把按鈕網址的 `url=` 參數改成自己的 GitHub repository URL；不要沿用指向原專案的部署按鈕。
+
+Cloudflare 會從這個 fork 再建立**第二個部署用 repository**，並建立 D1、設定 Workers Builds。請在部署前後核對來源 fork、部署 repository 與 Workers Builds 連接的 repository／production branch；之後推送到部署分支可能觸發重新建置與部署。若不想公開 fork，可用 GitHub **Import repository** 從已審查的版本建立私人獨立副本，再於 Cloudflare 連接該私人 repository 並依[進階部署指引](docs/005-deployment.md)設定資源與 bindings。
 
 Cloudflare Builds 會在 build 階段自動檢查並建立排程同步所需的 Queue；正式部署腳本也會再次檢查。既有安裝更新到使用 Queue 的版本時不需要手動建立資源。
 
 首次使用時，依畫面透過 **Git account → New Github Connection → Install & Authorize** 授權 Cloudflare 存取 GitHub。
 
-部署頁會先預填 Access 相關欄位；首次部署只需將 `CONFIG_ENCRYPTION_KEY` 改成自己產生的隨機金鑰，`TEAM_DOMAIN` 與 `POLICY_AUD` 會在步驟二設定。
-
-<img src="images/deploy-setup.png" alt="Cloudflare 部署設定" width="450">
+先在 Cloudflare Zero Trust 建立只允許自己身分的 Access policy，啟用 MFA 並設定較短的 session；取得實際 Team Domain 與 Application Audience (aud)。部署表單中的 `TEAM_DOMAIN`、`POLICY_AUD` 均填入實際值，`DEMO_MODE` 設為 `false`，正式 Worker 不設定 `LOCAL_DEV_MODE`；不要使用暫時值或新增 `POLICY_AUDS` 佔位設定。
 
 `CONFIG_ENCRYPTION_KEY` 是系統加密連接器設定時必須使用的金鑰，可用下列指令產生：
 
@@ -69,36 +71,36 @@ Cloudflare Builds 會在 build 階段自動檢查並建立排程同步所需的 
 openssl rand -hex 32
 ```
 
-使用一鍵部署時只需填入一次，部署後由 Cloudflare 保存；日常使用與後續自動更新不需要重新輸入。沒有另外記下金鑰不會影響現有部署，但若日後要重建 Worker、搬移環境或沿用既有 D1，就必須使用相同金鑰，否則需要重新設定所有連接器。若重視災難復原，建議將它保存在密碼管理器；無論是否另外保存，都不要在既有部署中任意更換或刪除。
+使用一鍵部署時只需填入一次，部署後由 Cloudflare 保存。另將此金鑰保存在密碼管理器；日後重建 Worker、搬移環境或沿用既有 D1 時必須使用相同金鑰，否則需要重新設定所有連接器。不要將金鑰提交到 Git、寫入匯出檔或任意更換。
 
 填寫完成後點擊 **Deploy**。
 
 ### 步驟二：啟用登入保護
 
-1. 前往 [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages**，選擇剛建立的 `taiwan-fin-hub`
-2. 開啟 **Domains**，將 Worker URL 的存取模式從 **Public** 改為 **Restricted**
-3. 若沒有 **Domains** 頁籤，請至 **Settings → Domains & Routes**，在 `workers.dev` 網址旁啟用 Cloudflare Access
+1. 前往 [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages**，選擇剛建立的 `taiwan-fin-hub`。
+2. 檢查 **Domains** 或 **Settings → Domains & Routes**，讓 `workers.dev`、自訂網域及任何其他可到達此 Worker 的公開網址都套用 Cloudflare Access；若有不受保護的網址，先停用該路徑。
+3. 將 Worker 的 **Settings → Variables and secrets** 中 `TEAM_DOMAIN`、`POLICY_AUD` 核對為實際值，確認 `DEMO_MODE=false` 且沒有 `LOCAL_DEV_MODE` 或暫時的 `POLICY_AUDS`。
 
 <img src="images/deploy-domains-restricted.png" alt="啟用 Cloudflare Access" width="700">
 
-切換後，Cloudflare 會顯示以下資訊：
+Access Application 會顯示以下資訊：
 
 - **Audience (aud)**：填入 Worker Secret `POLICY_AUD`
 - **JWKs URL**：取出前面的網域作為 `TEAM_DOMAIN`，例如 `https://yourteam.cloudflareaccess.com`
 
-前往 **Settings → Variables and secrets** 設定這兩個 Secret。
+先完成這兩項設定，再進行登入與憑證設定。
 
 <img src="images/deploy-secrets.png" alt="設定 Cloudflare Access Secrets" width="700">
 
 ### 步驟三：確認部署
 
-1. 開啟 Worker 的 `workers.dev` 網址，確認會先要求 Cloudflare Access 登入
-2. 登入後前往「設定 → 資料來源」設定連接器
-3. 點擊同步以取得最新資料
+1. 在登出狀態測試每個公開網址的 `/api/summary`，確認沒有金融資料回應且必須通過 Access；再登入確認能正常開啟。
+2. 確認開發與正式環境使用不同 D1。先維持各連接器排程停用，只設定一個連接器並執行一次手動同步。
+3. 將帳戶、餘額及交易與銀行原始紀錄核對；確認資料正確後，才在介面啟用所需的排程。匯出檔、D1 備份與 log 可能含敏感資料，應限制存取並妥善刪除。D1 Time Travel 保留期限依方案為 7 或 30 天，不能替代長期備份。
 
-### 步驟四：調整登入方式與有效期限（選用）
+### 步驟四：限制登入身分與期限
 
-Cloudflare Access 可能預設使用 Email OTP，登入狀態通常會在 24 小時後過期。以下設定可改用 Cloudflare 帳號登入，並將登入期限延長至一個月。
+Cloudflare Access 可能預設允許 Email OTP。僅允許自己控制的身分登入，啟用 MFA，並為 Application、Policy 及全域設定較短的 session duration。
 
 #### 使用 Cloudflare 帳號登入
 
@@ -109,40 +111,11 @@ Cloudflare Access 可能預設使用 Email OTP，登入狀態通常會在 24 小
 
 新建立的 Zero Trust organization 通常已預設啟用 Cloudflare identity provider，不需要另外新增。
 
-#### 將登入期限延長至一個月
+更多 Queue、Access 與更新操作請參考[進階部署與更新](docs/005-deployment.md)。
 
-1. 在 `taiwan-fin-hub` Access Application 中，將 **Session Duration** 設為 **1 month**
-2. 前往 **Zero Trust → Access controls → Access settings**，將 **Global session duration** 設為 **1 month**
-3. 若 Access Policy 另外設定了 Session Duration，也要改為一個月，否則會以較短的期限為準
+## 手動檢查更新
 
-更多 Queue、Access、自動更新原理與故障排查請參考[進階部署與更新](docs/005-deployment.md)。
-
-## 自動更新
-
-Cloudflare 的 Deploy to Cloudflare 流程目前不會將 `.github/workflows` 複製到新 repository，因此首次部署可以正常使用，但需要完成下方的一次性設定才會啟用版本更新。
-
-### 一次性啟用更新功能
-
-不需要修改程式碼，可直接在 GitHub 網頁完成：
-
-1. 在你的部署 repository 開啟 [`deploy/github/sync-upstream.yml`](deploy/github/sync-upstream.yml)，點擊 **Raw** 並複製完整內容
-2. 回到 repository 首頁，選擇 **Add file → Create new file**
-3. 將檔名設為 `.github/workflows/sync-upstream.yml`，貼上剛才複製的內容並 commit 至 `main`
-4. 前往 **Settings → Actions → General → Workflow permissions**，確認已允許 GitHub Actions 讀寫 repository 內容
-
-若已將 repository clone 至本機，也可以執行：
-
-```bash
-mkdir -p .github/workflows
-cp deploy/github/sync-upstream.yml .github/workflows/sync-upstream.yml
-git add .github/workflows/sync-upstream.yml
-git commit -m "啟用版本自動更新"
-git push
-```
-
-完成一次性設定後，可以前往部署 repository 的 **Actions → Sync Latest Version → Run workflow**，點擊 **Run workflow** 立即更新。workflow 也會在每天台灣時間 **04:15** 自動執行。
-
-每次執行會取得最新版本、進行安全三方合併，並由 Cloudflare Workers Builds 重新部署。若你修改過程式碼並與上游發生衝突，workflow 會停止且不會推送；請從 Actions 紀錄查看衝突並手動處理。首次同步、備份 branch 與舊版 workflow 的排查方式請參考[進階部署與更新](docs/005-deployment.md)。
+部署用 repository 不應安裝自動同步上游的 workflow。需要更新時，先檢查上游的變更、相依套件與安全公告，在 fork 或私人獨立副本中合併並測試選定的版本，再把經審查的 commit 更新至部署 repository。推送前核對 Cloudflare Workers Builds 連接的 repository 與 production branch，確認這次推送會部署哪個版本。
 
 ## 本機開發
 
